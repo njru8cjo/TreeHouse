@@ -1,5 +1,7 @@
 build/
 .vscode/
+xgll/
+skll
 
 # CMake.gitignore
 CMakeLists.txt.user

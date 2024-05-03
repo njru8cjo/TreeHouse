@@ -179,8 +179,10 @@ namespace Treehierarchy
                 auto answerCsvPath = testModelsDir + "/" + modelName + ".answer.csv";
 
                 BuildOptions option;
-                // option.enable_swap = true;
-                // option.enable_flint = true;
+                option.enable_swap = false;
+                option.enable_flint = false;
+                option.enable_ra = false;
+                option.regNum = 32;
                 SklearnParser parser(modelJsonPath, option);
 
                 verifySKlearnResult(parser, testCsvPath, answerCsvPath);
@@ -198,8 +200,10 @@ namespace Treehierarchy
                 auto dumpFileName =  GetRepoPath() + "/skll/" + modelName + ".ll";
 
                 BuildOptions option;
-                option.enable_swap = true;
-                option.enable_flint = true;
+                option.enable_swap = false;
+                option.enable_flint = false;
+                option.enable_ra = false;
+                option.regNum = 32;
                 SklearnParser parser(modelJsonPath, option);
                 parser.ConstructForest();
                 ModuleOp module = parser.buildHIRModule();

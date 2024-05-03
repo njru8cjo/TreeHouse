@@ -29,7 +29,7 @@ namespace Treehierarchy
         bool enable_swap = false;
         bool enable_flint = false;
         bool enable_ra = false;
-        size_t regNum = 16;
+        size_t regNum = 32;
     };
 
     class JsonParser
@@ -53,42 +53,38 @@ namespace Treehierarchy
 
         virtual void ConstructForest() = 0;
 
-        LLVM::GlobalOp pin_reg[32];
-        LLVM::AddressOfOp pin_addr[32];
+        LLVM::LoadOp pin_reg[32];
+        std::vector<Block*> leafBlock;
 
         ModuleOp buildHIRModule()
         {
             if(m_option.enable_ra) {
                 m_forest->SetRegNum(m_option.regNum);
                 // Initialize RA variables
-                auto loc = m_builder.getUnknownLoc();
                 size_t pinRegNum = m_forest->GetRegNum();
                 pinRegNum = (pinRegNum < m_forest->GetFeatureSize()) ? pinRegNum : m_forest->GetFeatureSize();
                 m_forest->SetRegNum(pinRegNum);
 
-                for(size_t i = 0; i < pinRegNum; i++)
+            }
+
+            if(!m_option.enable_ra) // If not ra, create function here
+            {
+                for (size_t i = 0; i < m_forest->GetTreeSize(); i++)
                 {
-                    // Set global vars for pin registers
-                    pin_reg[i] = m_builder.create<LLVM::GlobalOp>(loc, getFeatureType(), /*isConstant=*/false,
-                                    LLVM::Linkage::Internal, "pin_reg_" + std::to_string(i), Attribute());
-                    m_module.push_back(pin_reg[i]);
+                    OpBuilder::InsertPoint insertPoint = m_builder.saveInsertionPoint();
+
+                    func::FuncOp function(getFunctionPrototype("tree_" + std::to_string(i)));
+
+                    Block *entryBlock = function.addEntryBlock();
+                    DecisionTree *tree = m_forest->GetTree(i);
+                    m_builder.setInsertionPointToStart(entryBlock);
+                    buildNodeOp(entryBlock, tree, 0);
+                    m_module.push_back(function);
+
+                    m_builder.restoreInsertionPoint(insertPoint);
                 }
             }
-          
-            for (size_t i = 0; i < m_forest->GetTreeSize(); i++)
-            {
-                OpBuilder::InsertPoint insertPoint = m_builder.saveInsertionPoint();
-
-                func::FuncOp function(getFunctionPrototype("tree_" + std::to_string(i)));
-
-                Block *entryBlock = function.addEntryBlock();
-                DecisionTree *tree = m_forest->GetTree(i);
-                m_builder.setInsertionPointToStart(entryBlock);
-                buildNodeOp(entryBlock, tree, 0);
-                m_module.push_back(function);
-
-                m_builder.restoreInsertionPoint(insertPoint);
-            }
+            
 
             CreatePredictFunction();
 
@@ -216,21 +212,10 @@ namespace Treehierarchy
             {
                 Value threshold = createThreshold(node.threshold);
                 Value feature;
-
-                int nodeGlobalIdx = m_forest->GetGlobalIdxFromFeature(node.featureIndex);
-                //printf("Feature: %d, Get Idx: %d\n", node.featureIndex, nodeGlobalIdx);
-                if(m_option.enable_ra && nodeGlobalIdx >= 0)
-                {
-                    Value global_addr = m_builder.create<LLVM::AddressOfOp>(loc, pin_reg[nodeGlobalIdx]);
-                    feature = m_builder.create<LLVM::LoadOp>(loc, getFeatureType(), global_addr);
-                }
-                else
-                {
-                    Value featureIdx = m_builder.create<arith::ConstantIntOp>(loc, node.featureIndex, getI32());
-                    Value input = entryBlock->getArgument(0);
-                    Value featurePtr = m_builder.create<LLVM::GEPOp>(loc, getFeaturePointerType(), getFeatureType(), input, featureIdx);
-                    feature = m_builder.create<LLVM::LoadOp>(loc, getFeatureType(), featurePtr);
-                }
+                Value featureIdx = m_builder.create<arith::ConstantIntOp>(loc, node.featureIndex, getI32());
+                Value input = entryBlock->getArgument(0);
+                Value featurePtr = m_builder.create<LLVM::GEPOp>(loc, getFeaturePointerType(), getFeatureType(), input, featureIdx);
+                feature = m_builder.create<LLVM::LoadOp>(loc, getFeatureType(), featurePtr);
               
                 if (m_option.enable_flint && node.threshold < 0)
                 {
@@ -288,6 +273,7 @@ namespace Treehierarchy
                 CreateLeafNode(result, node);
             }
         }
+
     };
 }
 #endif
